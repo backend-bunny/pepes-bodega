@@ -1,0 +1,55 @@
+[project]
+name = "bodega-workers"
+version = "0.1.0"
+description = "Pepes Bodega media processing workers: frames, CLIP, OCR, Whisper, phash"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "nats-py>=2.9",
+    "psycopg[binary,pool]>=3.2",
+    "pgvector>=0.3",
+    "minio>=7.2",
+    "pillow>=11",
+    "imagehash>=4.3",
+    "numpy>=2",
+    "torch>=2.5",
+    "torchvision>=0.20",
+    "open-clip-torch>=2.29",
+    "rapidocr-onnxruntime>=1.4",
+    "opencv-python-headless>=4.10",
+    "faster-whisper>=1.1",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]  # ruff comes from devbox (pip wheel is not NixOS-runnable)
+
+[project.scripts]
+bodega-worker = "bodega_workers.__main__:main"
+
+# CPU-only torch wheels: the default index pulls multi-GB CUDA builds.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+markers = ["models: needs downloaded ML models (slow)"]
+asyncio_mode = "auto"
+
+[tool.uv]
+# rapidocr depends on GUI opencv (needs libGL/libxcb); swap in the headless build.
+override-dependencies = ["opencv-python; sys_platform == 'never'"]

@@ -1,0 +1,33 @@
+# sample media is never committed
+samples/
+Reactions/
+
+# devbox
+.devbox/
+
+# go
+/bin/
+*.test
+coverage.out
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# web
+web/node_modules/
+web/.svelte-kit/
+web/build/
+
+# tilt / local
+.env
+.env.*
+*.local.yaml
+deploy/helm/pepes-bodega/charts/
+.local-stack/
+
+# per-user claude settings
+.claude/settings.local.json

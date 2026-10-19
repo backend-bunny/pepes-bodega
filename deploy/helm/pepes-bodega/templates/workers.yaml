@@ -1,0 +1,96 @@
+{{- $w := dict "root" . "component" "worker" -}}
+{{- $e := dict "root" . "component" "embedder" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bodega.fullname" . }}-worker
+  labels: {{- include "bodega.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  {{- if not .Values.workers.autoscaling.enabled }}
+  replicas: {{ .Values.workers.replicas }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "bodega.selector" $w | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "bodega.labels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      {{- include "bodega.podSecurity" . | nindent 6 }}
+      # Let an in-flight job finish (JetStream redelivers if we get killed anyway).
+      terminationGracePeriodSeconds: 300
+      containers:
+        - name: worker
+          image: {{ include "bodega.workerImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["process"]
+          {{- include "bodega.containerSecurity" . | nindent 10 }}
+          env:
+            {{- include "bodega.workerEnv" . | nindent 12 }}
+            - name: BODEGA_TORCH_THREADS
+              value: {{ .Values.workers.torchThreads | quote }}
+          resources: {{- toYaml .Values.workers.resources | nindent 12 }}
+          volumeMounts:
+            # Root FS is read-only; /tmp is HOME, TMPDIR and per-job scratch.
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bodega.fullname" . }}-embedder
+  labels: {{- include "bodega.labels" . | nindent 4 }}
+    app.kubernetes.io/component: embedder
+spec:
+  replicas: {{ .Values.embedder.replicas }}
+  selector:
+    matchLabels: {{- include "bodega.selector" $e | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "bodega.labels" . | nindent 8 }}
+        app.kubernetes.io/component: embedder
+    spec:
+      {{- include "bodega.podSecurity" . | nindent 6 }}
+      containers:
+        - name: embedder
+          image: {{ include "bodega.workerImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["embedder"]
+          {{- include "bodega.containerSecurity" . | nindent 10 }}
+          env:
+            {{- include "bodega.workerEnv" . | nindent 12 }}
+            - name: BODEGA_TORCH_THREADS
+              value: {{ .Values.embedder.torchThreads | quote }}
+          resources: {{- toYaml .Values.embedder.resources | nindent 12 }}
+          volumeMounts:
+            # Root FS is read-only; /tmp is HOME, TMPDIR and per-job scratch.
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+{{- if .Values.workers.autoscaling.enabled }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "bodega.fullname" . }}-worker
+  labels: {{- include "bodega.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "bodega.fullname" . }}-worker
+  minReplicaCount: {{ .Values.workers.autoscaling.minReplicas }}
+  maxReplicaCount: {{ .Values.workers.autoscaling.maxReplicas }}
+  cooldownPeriod: {{ .Values.workers.autoscaling.cooldownPeriod }}
+  pollingInterval: 15
+  triggers:
+    - type: nats-jetstream
+      metadata:
+        natsServerMonitoringEndpoint: {{ .Values.config.natsMonitoringEndpoint | quote }}
+        account: "$G"
+        stream: BODEGA_JOBS
+        consumer: process-workers
+        lagThreshold: {{ .Values.workers.autoscaling.lagThreshold | quote }}
+        activationLagThreshold: "0"
+{{- end }}

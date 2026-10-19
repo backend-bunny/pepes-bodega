@@ -1,0 +1,10 @@
+samples/
+Reactions/
+.devbox/
+.git/
+web/node_modules/
+web/.svelte-kit/
+web/build/
+workers/.venv/
+**/__pycache__/
+bin/

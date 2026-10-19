@@ -1,0 +1,6 @@
+apiVersion: v2
+name: pepes-bodega
+description: Meme & video archive search engine (API, ML workers, embedder)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,101 @@
+# Defaults target production (Talos + CNPG + external SeaweedFS + NATS chart).
+# deploy/helm/values-dev.yaml overrides them for kind.
+
+image:
+  api:
+    repository: ghcr.io/backend-bunny/pepes-bodega-api
+    tag: ""            # defaults to .Chart.AppVersion
+  worker:
+    repository: ghcr.io/backend-bunny/pepes-bodega-worker
+    tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+config:
+  publicURL: https://bodega.example.com
+  natsURL: nats://nats.nats.svc:4222
+  # NATS monitoring endpoint (host:port) used by the KEDA scaler.
+  natsMonitoringEndpoint: nats-headless.nats.svc.cluster.local:8222
+  s3:
+    endpoint: seaweedfs-s3.seaweedfs.svc:8333
+    region: us-east-1
+    bucket: bodega
+    useSSL: false
+  oidc:
+    issuer: https://auth.example.com
+    clientID: bodega
+    # Where the API itself reaches the IdP if the public issuer isn't reachable
+    # from inside the cluster (e.g. issuer exposed via a proxy). Optional.
+    internalURL: ""
+    # Namespace for user identities (users are keyed by namespace + subject).
+    # Defaults to the issuer; set it if the issuer URL changes between deploys.
+    identityNamespace: ""
+  maxUploadBytes: 2147483648
+  insecureCookies: false
+  workers:
+    clipModel: ViT-B-32
+    clipPretrained: laion2b_s34b_b79k
+    whisperModel: base
+    maxFrames: 16
+    frameIntervalS: 5
+    dupThreshold: 6
+
+# Secret holding BODEGA_DATABASE_URL, BODEGA_S3_ACCESS_KEY, BODEGA_S3_SECRET_KEY
+# and BODEGA_OIDC_CLIENT_SECRET. Create it out of band (SOPS, ExternalSecrets...).
+existingSecret: pepes-bodega
+# When cnpg.enabled, BODEGA_DATABASE_URL is taken from the CNPG app secret instead.
+
+cnpg:
+  enabled: false
+  instances: 3
+  # CNPG "standard" images ship pgvector.
+  imageName: ghcr.io/cloudnative-pg/postgresql:17-standard-trixie
+  storage:
+    size: 50Gi
+    storageClass: ""
+
+api:
+  replicas: 2
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  service:
+    type: ClusterIP
+    port: 80
+    nodePort: null
+  # Uploads are spooled here before going to S3; size for concurrent big videos.
+  uploadScratch:
+    sizeLimit: 10Gi
+  ingress:
+    enabled: false
+    className: ""
+    host: bodega.example.com
+    tls: []
+    annotations: {}
+
+embedder:
+  replicas: 1
+  torchThreads: 1
+  resources:
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { memory: 2Gi }
+
+workers:
+  torchThreads: 2
+  resources:
+    requests: { cpu: "2", memory: 3Gi }
+    limits: { memory: 4Gi }
+  autoscaling:
+    # KEDA ScaledObject on JetStream consumer lag. Requires KEDA installed.
+    enabled: true
+    minReplicas: 0
+    maxReplicas: 8
+    lagThreshold: 10
+    cooldownPeriod: 300
+  # Used only when autoscaling is disabled.
+  replicas: 1
+
+# Extra env vars for all bodega containers.
+extraEnv: []
+nodeSelector: {}
+tolerations: []

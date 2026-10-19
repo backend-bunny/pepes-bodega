@@ -1,0 +1,43 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/main/.schema/devbox.schema.json",
+  "packages": [
+    "go@latest",
+    "golangci-lint@latest",
+    "python@3.12",
+    "uv@latest",
+    "nodejs@22",
+    "ffmpeg@latest",
+    "kind@latest",
+    "kubectl@latest",
+    "kubernetes-helm@latest",
+    "tilt@latest",
+    "natscli@latest",
+    "jq@latest",
+    "yq-go@latest",
+    "ruff@latest",
+    "path:./nix/postgres",
+    "nats-server@latest",
+    "seaweedfs@latest",
+    "chromium@latest",
+    "dex-oidc@latest",
+    "socat@latest"
+  ],
+  "env": {
+    "KIND_CLUSTER": "pepes-bodega",
+    "GOFLAGS": "-mod=mod"
+  },
+  "shell": {
+    "init_hook": [
+      "export PATH=$PWD/bin:$PATH"
+    ],
+    "scripts": {
+      "cluster:up": "./hack/cluster-up.sh",
+      "cluster:down": "kind delete cluster --name $KIND_CLUSTER",
+      "dev": "tilt up",
+      "test": "./hack/test.sh",
+      "lint": "./hack/lint.sh",
+      "seed": "./hack/seed.sh",
+      "dev:netbird": "BODEGA_NETBIRD_CMD=${BODEGA_NETBIRD_CMD:-netbird-kbpp} BODEGA_NETBIRD_DOMAIN=${BODEGA_NETBIRD_DOMAIN-dev.kbpp.net} ./hack/dev-netbird.sh"
+    }
+  }
+}

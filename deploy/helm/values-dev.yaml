@@ -1,0 +1,42 @@
+# Overrides for the local kind cluster (applied by the Tiltfile).
+image:
+  api: { repository: bodega-api, tag: dev }
+  worker: { repository: bodega-worker, tag: dev }
+  pullPolicy: IfNotPresent
+
+existingSecret: bodega-dev-secrets
+
+config:
+  publicURL: http://localhost:8080
+  natsURL: nats://nats:4222
+  natsMonitoringEndpoint: nats.bodega-dev.svc.cluster.local:8222
+  s3: { endpoint: "seaweedfs:8333" }
+  oidc:
+    # issuer is set by the Tiltfile (localhost or netbird-exposed URL).
+    clientID: bodega
+    internalURL: http://dex:5556
+    # Issuer changes per run with dev:netbird; keep accounts stable.
+    identityNamespace: dex-dev
+  insecureCookies: true
+
+api:
+  replicas: 1
+  service: { type: NodePort, port: 8080, nodePort: 30080 }
+  uploadScratch: { sizeLimit: 2Gi }
+
+embedder:
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 2Gi }
+
+workers:
+  torchThreads: 2
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { memory: 4Gi }
+  autoscaling:
+    enabled: true
+    minReplicas: 0
+    maxReplicas: 3
+    lagThreshold: 5
+    cooldownPeriod: 60

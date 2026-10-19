@@ -1,0 +1,103 @@
+{{- $c := dict "root" . "component" "api" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bodega.fullname" . }}-api
+  labels: {{- include "bodega.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels: {{- include "bodega.selector" $c | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "bodega.labels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      {{- include "bodega.podSecurity" . | nindent 6 }}
+      containers:
+        - name: api
+          image: {{ include "bodega.apiImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- include "bodega.containerSecurity" . | nindent 10 }}
+          ports: [{ name: http, containerPort: 8080 }]
+          env:
+            {{- include "bodega.env" . | nindent 12 }}
+            - name: BODEGA_PUBLIC_URL
+              value: {{ .Values.config.publicURL | quote }}
+            - name: BODEGA_OIDC_ISSUER
+              value: {{ .Values.config.oidc.issuer | quote }}
+            - name: BODEGA_OIDC_CLIENT_ID
+              value: {{ .Values.config.oidc.clientID | quote }}
+            {{- with .Values.config.oidc.internalURL }}
+            - name: BODEGA_OIDC_INTERNAL_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.oidc.identityNamespace }}
+            - name: BODEGA_OIDC_IDENTITY_NAMESPACE
+              value: {{ . | quote }}
+            {{- end }}
+            - name: BODEGA_OIDC_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: {{ .Values.existingSecret }}, key: BODEGA_OIDC_CLIENT_SECRET } }
+            - name: BODEGA_MAX_UPLOAD_BYTES
+              value: {{ .Values.config.maxUploadBytes | int64 | quote }}
+            - name: BODEGA_INSECURE_COOKIES
+              value: {{ .Values.config.insecureCookies | quote }}
+            - name: TMPDIR
+              value: /scratch
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          resources: {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - { name: scratch, mountPath: /scratch }
+      volumes:
+        - name: scratch
+          emptyDir: { sizeLimit: {{ .Values.api.uploadScratch.sizeLimit }} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bodega.fullname" . }}-api
+  labels: {{- include "bodega.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.api.service.type }}
+  selector: {{- include "bodega.selector" $c | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.api.service.port }}
+      targetPort: http
+      {{- with .Values.api.service.nodePort }}
+      nodePort: {{ . }}
+      {{- end }}
+{{- if .Values.api.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "bodega.fullname" . }}
+  labels: {{- include "bodega.labels" . | nindent 4 }}
+  {{- with .Values.api.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.api.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with .Values.api.ingress.tls }}
+  tls: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.api.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "bodega.fullname" . }}-api
+                port: { name: http }
+{{- end }}

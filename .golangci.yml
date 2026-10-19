@@ -1,0 +1,10 @@
+version: "2"
+linters:
+  settings:
+    errcheck:
+      # Deferred closes on read paths are not actionable.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (io.ReadCloser).Close
+        - (*github.com/backend-bunny/pepes-bodega/internal/storage.Object).Close

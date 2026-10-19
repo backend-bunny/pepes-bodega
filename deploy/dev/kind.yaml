@@ -1,0 +1,13 @@
+# kind cluster for local development. Host ports map straight to NodePorts so
+# the browser and in-cluster pods can use the same URLs (needed for OIDC).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: pepes-bodega
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - { containerPort: 30080, hostPort: 8080, listenAddress: "127.0.0.1" } # bodega-api + web
+      - { containerPort: 30556, hostPort: 5556, listenAddress: "127.0.0.1" } # dex (OIDC)
+      - { containerPort: 30333, hostPort: 8333, listenAddress: "127.0.0.1" } # seaweedfs s3
+      - { containerPort: 30432, hostPort: 5432, listenAddress: "127.0.0.1" } # postgres
+      - { containerPort: 30222, hostPort: 8222, listenAddress: "127.0.0.1" } # nats monitoring
