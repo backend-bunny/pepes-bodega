@@ -34,7 +34,9 @@ type APIError struct {
 	Body   string
 }
 
-func (e *APIError) Error() string { return fmt.Sprintf("api: %d %s", e.Status, strings.TrimSpace(e.Body)) }
+func (e *APIError) Error() string {
+	return fmt.Sprintf("api: %d %s", e.Status, strings.TrimSpace(e.Body))
+}
 
 func (c *Client) do(ctx context.Context, method, path, contentType string, body io.Reader, out any) error {
 	req, err := http.NewRequestWithContext(ctx, method, c.Server+path, body)

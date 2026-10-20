@@ -18,7 +18,7 @@ import (
 )
 
 // fileState caches a file's hash keyed by path+size+mtime so unchanged files
-// are not re-hashed on every scan.
+// are not re-hashed on every scan, and whether it was uploaded to this server.
 type fileState struct {
 	Size     int64  `json:"size"`
 	ModNano  int64  `json:"mod"`
@@ -44,7 +44,10 @@ func (p *pusher) loadState() error {
 	if err != nil {
 		return err
 	}
-	p.statePath = filepath.Join(dir, "bodega", "state.json")
+	// Per server: "uploaded" is only true for the server it was uploaded to. A
+	// shared cache made a fresh server (new cluster, new URL) receive nothing.
+	sum := sha256.Sum256([]byte(p.client.Server))
+	p.statePath = filepath.Join(dir, "bodega", "state-"+hex.EncodeToString(sum[:6])+".json")
 	p.state = map[string]fileState{}
 	b, err := os.ReadFile(p.statePath)
 	if err == nil {

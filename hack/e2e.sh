@@ -48,6 +48,10 @@ cp "$SAMPLES/0000% dumb.png" "$work/dumb-copy.png"   # exact duplicate content
 cp "$SAMPLES/great you are a soyboy beta cuck.webm" "$work/audio-clip.webm"
 # near-duplicate: same picture re-encoded at half size
 ffmpeg -v error -i "$SAMPLES/5 celsius outside.jpg" -vf scale=iw/2:-2 -q:v 8 "$work/celsius-small.jpg"
+# Record the live progress stream (SSE) for the whole run.
+curl -sN "$SERVER/api/v1/events" >"$LOGS/events.log" &
+pids+=($!)
+
 export BODEGA_SERVER=$SERVER BODEGA_TOKEN=unused-with-dev-auth
 "$LOCAL_STACK_DIR/../bodega" push --device e2e "$work"
 
@@ -81,20 +85,22 @@ id=$(api /api/v1/media | jq '.items[0].id')
 api "/api/v1/media/$id" | jq -e '.tags | length > 0' >/dev/null || fail "no tags on media $id"
 curl -fsS -o /dev/null "$SERVER/api/v1/blobs/$(api "/api/v1/media/$id" | jq -r .sha256)/thumb" || fail "thumbnail missing"
 
+# ---- live progress (SSE) ----
+events() { sed -n 's/^data: //p' "$LOGS/events.log"; }
+sleep 2  # last push is coalesced (~0.75 s)
+[[ $(events | tail -1 | jq '.stats.by_status.ready') == 6 ]] \
+  || fail "SSE: last progress event is not 6 ready: $(events | tail -1)"
+[[ $(events | jq -s '[.[].blobs[] | select(. == "ready")] | length') -ge 6 ]] \
+  || fail "SSE: expected per-item ready updates, got: $(events | jq -c .blobs | tr '\n' ' ')"
 dups=$(api /api/v1/stats | jq .near_duplicates)
 [[ $dups == 1 ]] || fail "expected 1 near-duplicate (resized copy), got $dups"
 
-# ---- web UI (headless chromium runs the SPA, then dumps the rendered DOM) ----
-# A page that never goes network-idle (e.g. a fetch loop) hits the timeout and renders nothing.
-dom() { timeout 60 chromium --headless --no-sandbox --disable-gpu --virtual-time-budget=6000 --dump-dom "$SERVER$1" 2>/dev/null || true; }
-before=$(grep -c '"method":"GET","path":"/api/v1/media"' "$LOGS/api.log" || true)
-cards=$(dom / | { grep -o 'class="card' || true; } | wc -l)
-[[ $cards == 6 ]] || fail "home page rendered $cards cards, want 6"
-after=$(grep -c '"method":"GET","path":"/api/v1/media"' "$LOGS/api.log" || true)
-(( after - before <= 3 )) || fail "home page made $((after - before)) list requests (fetch loop?)"
-dom "/?q=bother" | grep -q "1 results\|[0-9] results" || fail "search page did not render results"
-dom "/m/$id" | grep -q "<h2" || fail "detail page did not render"
-dom /settings | grep -q "Device tokens" || fail "settings page did not render"
-dom /upload | grep -q "Drop memes here" || fail "upload page did not render"
+# ---- web UI: real browser (playwright-core + devbox chromium) ----
+# Renders every page, checks for fetch loops, and deletes one item with the home
+# page open to verify the stats line updates live over SSE (media DELETE trigger).
+small_id=$(api /api/v1/media | jq '.items[] | select(.original_filename == "celsius-small.jpg") | .id')
+node web/tests/ui-smoke.mjs "$SERVER" 6 "$small_id" || fail "UI smoke test"
+sleep 1
+[[ $(events | tail -1 | jq .stats.media) == 5 ]] || fail "SSE: delete not reflected: $(events | tail -1)"
 
 echo "E2E OK"

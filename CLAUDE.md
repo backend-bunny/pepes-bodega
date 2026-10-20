@@ -36,6 +36,12 @@ web upload ─┴─> bodega-api (Go) ───────┼─> Postgres + pg
   `blobs.status` is the source of truth; the API's reconciler re-publishes
   `pending` blobs only when the consumer is idle. Workers send in-progress
   heartbeats, nak with backoff, mark `failed` after `MaxDeliver`.
+- **Live progress**: triggers on `blobs` (status/duplicate_of) and `media`
+  (insert/delete) `pg_notify('bodega_events', …)` (migration 00002). Every API
+  replica LISTENs (`internal/api/events.go`, one hijacked pool conn) and pushes
+  per-user `progress` SSE events on `GET /api/v1/events` (stats + the user's
+  changed blob statuses, coalesced to ~1 per 750 ms). The home page applies them
+  to the stats line and visible cards.
 - **Auth**: OIDC code flow + PKCE in the API (BFF pattern, session cookie);
   CLI uses `pbt_…` bearer tokens created in Settings. Only hashes are stored.
   `/api/v1/media/check` reveals only what *the caller* owns — never whether
@@ -67,6 +73,8 @@ web upload ─┴─> bodega-api (Go) ───────┼─> Postgres + pg
 - Embed RPC: request `{text}` → reply `{embedding: float[512]}` or `{error}`.
 - Schema: migrations are Go-owned; `workers/bodega_workers/store.py` writes
   `frames`, `tags`, `transcripts`, and the derived `blobs` columns.
+- NOTIFY payloads: `blob:<sha256>:<status>`, `media:<owner_id>` (any status write
+  from the workers reaches the GUI automatically).
 - Embedding dimension 512 (ViT-B-32). Changing the CLIP model to a different
   dimension needs a migration and a full reprocess.
 - S3 keys: `storage.BlobKey/ThumbKey` ⇄ `store.blob_key/thumb_key`.
@@ -83,11 +91,17 @@ devbox run dev:netbird     # same, plus `netbird expose` of app, Dex and Tilt UI
 devbox run seed            # log in as pepe via Dex, upload samples/reactions with the CLI
 devbox run test            # go test, pytest (no models), svelte-check; WITH_MODELS=1 for model tests
 devbox run lint            # go vet + golangci-lint, ruff, helm lint
-hack/e2e.sh                # full end-to-end WITHOUT k8s/docker (process stack + real models + headless-chromium UI checks)
+hack/e2e.sh                # full end-to-end WITHOUT k8s/docker (process stack + real models + playwright UI incl. live SSE update)
 hack/e2e-oidc.sh           # real Dex login flow (split-horizon issuer), tokens, logout; also run by `test`
 hack/local-stack.sh up|down|env   # postgres/nats/seaweedfs as processes (ports 15432/14222/18333)
 devbox run cluster:down
 ```
+
+**Dev sizing.** `hack/dev-sizing.sh` sizes the worker pool to the host (measured:
+~1.6 GiB per worker, ~1.5 GiB embedder, ~4.5 GiB for the rest of the stack; 2
+cores kept free). The Tiltfile prints the result and passes it to Helm. Override
+with `BODEGA_WORKERS_MAX`, `BODEGA_WORKER_THREADS`, `BODEGA_WORKER_MEMORY`,
+`BODEGA_SEED_JOBS` (a 4-core/8 GB VM gets 1 worker x 2 threads).
 
 Dev login (Dex): `pepe@bodega.local` / `sangria` (also `stig-helmer@bodega.local`).
 
@@ -183,6 +197,12 @@ Talos cluster, CloudNativePG (`cnpg.enabled=true` renders a `Cluster` with the
   this way, since netbird-exposed URLs return 421 from the exposing host.
 - SeaweedFS opens its S3 port before the filer is ready (500s); the API retries
   the bucket check for 30 s, and `local-stack.sh down` waits for weed to exit.
+- Headless `chromium --dump-dom` never dumps a page with an open EventSource
+  (both `--virtual-time-budget` and `--timeout`). UI checks use playwright-core
+  driving devbox's Chromium (`web/tests/ui-smoke.mjs`, run by `hack/e2e.sh`).
+- Go: `defer x.Hijack().Close()` evaluates `Hijack()` immediately; hijack first.
+- The CLI's upload cache is per server URL (`state-<hash>.json`); a shared cache
+  made fresh servers (new cluster, new netbird URL) silently receive nothing.
 - In bash with `set -o pipefail`, `x=$(… | grep -o …)` exits silently when grep
   finds nothing — wrap with `{ grep … || true; }` in test scripts.
 

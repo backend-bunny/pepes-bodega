@@ -24,6 +24,7 @@ type Server struct {
 	Store          *storage.Store
 	Queue          *queue.Client
 	Auth           *auth.Authenticator
+	Hub            *Hub
 	Log            *slog.Logger
 	MaxUploadBytes int64
 	// WebDir, if set, is served as a single-page app at /.
@@ -44,6 +45,7 @@ func (s *Server) Handler() http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/v1/me", s.me)
 	api.HandleFunc("GET /api/v1/stats", s.stats)
+	api.HandleFunc("GET /api/v1/events", s.events)
 	api.HandleFunc("POST /api/v1/media/check", s.checkHashes)
 	api.HandleFunc("POST /api/v1/media", s.upload)
 	api.HandleFunc("GET /api/v1/media", s.listMedia)
@@ -121,6 +123,9 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code
 	r.ResponseWriter.WriteHeader(code)
 }
+
+// Unwrap lets http.ResponseController reach Flush on the real writer (SSE).
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func (s *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -226,8 +231,10 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": nonNil(items), "semantic": emb != nil})
 }
 
-func (s *Server) blobRaw(w http.ResponseWriter, r *http.Request)   { s.serveBlob(w, r, storage.BlobKey) }
-func (s *Server) blobThumb(w http.ResponseWriter, r *http.Request) { s.serveBlob(w, r, storage.ThumbKey) }
+func (s *Server) blobRaw(w http.ResponseWriter, r *http.Request) { s.serveBlob(w, r, storage.BlobKey) }
+func (s *Server) blobThumb(w http.ResponseWriter, r *http.Request) {
+	s.serveBlob(w, r, storage.ThumbKey)
+}
 
 func (s *Server) serveBlob(w http.ResponseWriter, r *http.Request, key func(string) string) {
 	sha := r.PathValue("sha")

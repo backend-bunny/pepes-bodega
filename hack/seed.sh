@@ -25,4 +25,4 @@ if [[ -z "${BODEGA_TOKEN:-}" ]]; then
 fi
 
 export BODEGA_SERVER=$LOCAL BODEGA_TOKEN
-go run ./cmd/bodega push --device seed --jobs 6 "${PATHS[@]}"
+go run ./cmd/bodega push --device seed --jobs "${BODEGA_SEED_JOBS:-2}" "${PATHS[@]}"

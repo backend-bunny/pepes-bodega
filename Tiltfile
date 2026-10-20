@@ -7,6 +7,13 @@ allow_k8s_contexts('kind-pepes-bodega')
 public_url = os.getenv('BODEGA_PUBLIC_URL', 'http://localhost:8080')
 dex_issuer = os.getenv('BODEGA_DEX_PUBLIC_URL', 'http://localhost:5556')
 
+# Worker pool sized to this machine (hack/dev-sizing.sh); override with
+# BODEGA_WORKERS_MAX / BODEGA_WORKER_THREADS / BODEGA_WORKER_MEMORY / BODEGA_SEED_JOBS.
+sizing = decode_json(str(local('hack/dev-sizing.sh', quiet=True, echo_off=True)))
+print('dev sizing: %d cores, %d MiB -> up to %d worker(s) x %d thread(s), %s limit (auto: %d)' % (
+    sizing['cores'], sizing['mem_mib'], sizing['workers_max'], sizing['worker_threads'],
+    sizing['worker_memory'], sizing['workers_auto']))
+
 # ---- backing services: postgres, seaweedfs, nats, dex ----
 deps = str(read_file('deploy/dev/deps.yaml'))
 deps = deps.replace('__DEX_ISSUER__', dex_issuer).replace('__BODEGA_PUBLIC_URL__', public_url)
@@ -35,7 +42,13 @@ docker_build(
 k8s_yaml(helm(
     'deploy/helm/pepes-bodega', name='bodega',
     values=['deploy/helm/values-dev.yaml'],
-    set=['config.publicURL=' + public_url, 'config.oidc.issuer=' + dex_issuer],
+    set=[
+        'config.publicURL=' + public_url,
+        'config.oidc.issuer=' + dex_issuer,
+        'workers.autoscaling.maxReplicas=%d' % sizing['workers_max'],
+        'workers.torchThreads=%d' % sizing['worker_threads'],
+        'workers.resources.limits.memory=' + sizing['worker_memory'],
+    ],
 ))
 links = [link('http://localhost:8080', 'localhost (pepe@bodega.local / sangria)')]
 if public_url != 'http://localhost:8080':
@@ -50,6 +63,7 @@ local_resource('web-dev', serve_cmd='cd web && npm run dev', labels=['tools'], a
                links=['http://localhost:5173'])
 local_resource('seed', cmd='hack/seed.sh', labels=['tools'], auto_init=False,
                trigger_mode=TRIGGER_MODE_MANUAL, resource_deps=['bodega-api'],
-               env={'BODEGA_PUBLIC_URL': public_url, 'BODEGA_DEX_PUBLIC_URL': dex_issuer})
+               env={'BODEGA_PUBLIC_URL': public_url, 'BODEGA_DEX_PUBLIC_URL': dex_issuer,
+                    'BODEGA_SEED_JOBS': str(sizing['seed_jobs'])})
 local_resource('tests', cmd='hack/test.sh', labels=['tools'], auto_init=False,
                trigger_mode=TRIGGER_MODE_MANUAL)

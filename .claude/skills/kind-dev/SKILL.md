@@ -20,6 +20,19 @@ devbox run seed         # or trigger the "seed" resource in Tilt
 Login: `pepe@bodega.local` / `sangria`. The first worker image build bakes
 models (~2 GB layer, cached afterwards).
 
+## Sizing to the machine
+
+The Tiltfile log starts with `dev sizing: N cores, M MiB -> up to X worker(s)...`
+(from `hack/dev-sizing.sh`). If the machine chokes during `seed`, lower it, and
+on big machines raise it, then restart Tilt:
+
+```sh
+BODEGA_WORKERS_MAX=1 BODEGA_WORKER_THREADS=1 devbox run dev   # tiny laptop
+BODEGA_WORKERS_MAX=8 devbox run dev                           # beefy box
+```
+Also: `BODEGA_WORKER_MEMORY` (limit, default 3Gi), `BODEGA_SEED_JOBS` (parallel uploads).
+`kubectl top pods` shows whether CPU or memory is the bottleneck.
+
 ## Inspect (namespace `bodega-dev` is the context default)
 
 ```sh

@@ -30,13 +30,15 @@ embedder:
     limits: { memory: 2Gi }
 
 workers:
+  # maxReplicas, torchThreads and the memory limit are set per machine by the
+  # Tiltfile (hack/dev-sizing.sh); these are only fallbacks.
   torchThreads: 2
   resources:
     requests: { cpu: 500m, memory: 1Gi }
-    limits: { memory: 4Gi }
+    limits: { memory: 3Gi }
   autoscaling:
     enabled: true
     minReplicas: 0
-    maxReplicas: 3
+    maxReplicas: 1
     lagThreshold: 5
     cooldownPeriod: 60

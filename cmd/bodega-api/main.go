@@ -62,8 +62,12 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
+	hub := api.NewHub(pool, log)
+	go hub.Run(ctx)
+
 	srv := &api.Server{
 		Q: q, Store: store, Queue: bus, Auth: authn, Log: log,
+		Hub:            hub,
 		MaxUploadBytes: cfg.MaxUploadBytes,
 		WebDir:         os.Getenv("BODEGA_WEB_DIR"),
 		Ready: func(ctx context.Context) error {

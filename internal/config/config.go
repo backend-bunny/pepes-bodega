@@ -69,10 +69,10 @@ func LoadAPI() (API, error) {
 			UseSSL:    envBool("BODEGA_S3_USE_SSL", false),
 		},
 		OIDC: OIDC{
-			IssuerURL:    env("BODEGA_OIDC_ISSUER", ""),
-			ClientID:     env("BODEGA_OIDC_CLIENT_ID", ""),
-			ClientSecret: env("BODEGA_OIDC_CLIENT_SECRET", ""),
-			InternalURL:  env("BODEGA_OIDC_INTERNAL_URL", ""),
+			IssuerURL:         env("BODEGA_OIDC_ISSUER", ""),
+			ClientID:          env("BODEGA_OIDC_CLIENT_ID", ""),
+			ClientSecret:      env("BODEGA_OIDC_CLIENT_SECRET", ""),
+			InternalURL:       env("BODEGA_OIDC_INTERNAL_URL", ""),
 			IdentityNamespace: env("BODEGA_OIDC_IDENTITY_NAMESPACE", ""),
 		},
 	}

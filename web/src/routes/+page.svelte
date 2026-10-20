@@ -2,7 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { api, type MediaItem, type Stats } from '#lib/api.ts';
+	import { api, subscribeProgress, type MediaItem, type Stats } from '#lib/api.ts';
 	import MediaCard from '#lib/MediaCard.svelte';
 
 	let query = $state(page.url.searchParams.get('q') ?? '');
@@ -67,10 +67,21 @@
 	});
 
 	onMount(() => {
+		// Initial stats; live updates arrive over SSE as workers process items.
 		api.stats().then((s) => (stats = s)).catch(() => {});
+		const stopProgress = subscribeProgress((ev) => {
+			stats = ev.stats;
+			for (const item of items) {
+				const status = ev.blobs[item.sha256];
+				if (status) item.status = status;
+			}
+		});
 		const io = new IntersectionObserver((e) => e[0].isIntersecting && more(), { rootMargin: '600px' });
 		io.observe(sentinel);
-		return () => io.disconnect();
+		return () => {
+			io.disconnect();
+			stopProgress();
+		};
 	});
 </script>
 

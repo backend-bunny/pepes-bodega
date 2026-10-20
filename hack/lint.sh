@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-echo "== go"; go vet ./... && golangci-lint run ./...
+echo "== go"; test -z "$(gofmt -l ./cmd ./internal ./hack)" || { gofmt -l ./cmd ./internal ./hack; echo "gofmt needed"; exit 1; }
+go vet ./... && golangci-lint run ./...
 echo "== python"; (cd workers && ruff check . && ruff format --check .)
 echo "== helm"; helm lint deploy/helm/pepes-bodega -f deploy/helm/values-dev.yaml
 # Evaluates the Tiltfile (incl. its YAML, with Tilt's stricter parser) without a cluster.

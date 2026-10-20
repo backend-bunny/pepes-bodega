@@ -51,9 +51,9 @@ type uploadResult struct {
 	MediaID   int64  `json:"media_id"`
 	SHA256    string `json:"sha256"`
 	Kind      string `json:"kind"`
-	Created   bool   `json:"created"`    // user did not own it before
-	NewBlob   bool   `json:"new_blob"`   // content was new to the archive
-	Duplicate bool   `json:"duplicate"`  // exact duplicate of existing content
+	Created   bool   `json:"created"`   // user did not own it before
+	NewBlob   bool   `json:"new_blob"`  // content was new to the archive
+	Duplicate bool   `json:"duplicate"` // exact duplicate of existing content
 }
 
 // upload accepts multipart/form-data with fields "device" (optional, first)

@@ -131,3 +131,16 @@ export function formatBytes(n: number): string {
 	}
 	return `${n.toFixed(i ? 1 : 0)} ${units[i]}`;
 }
+
+export interface ProgressEvent {
+	stats: Stats;
+	/** sha256 -> new status, for the user's own media that changed since the last event. */
+	blobs: Record<string, Status>;
+}
+
+/** Live processing progress (SSE). Reconnects automatically; returns a closer. */
+export function subscribeProgress(onEvent: (ev: ProgressEvent) => void): () => void {
+	const es = new EventSource('/api/v1/events');
+	es.addEventListener('progress', (e) => onEvent(JSON.parse((e as MessageEvent).data)));
+	return () => es.close();
+}

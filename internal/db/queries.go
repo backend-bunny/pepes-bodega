@@ -438,3 +438,21 @@ func (q *Queries) UserStats(ctx context.Context, userID int64) (Stats, error) {
 	}
 	return s, rows.Err()
 }
+
+// OwnedBlobs returns the subset of sha256s the user has in their library.
+func (q *Queries) OwnedBlobs(ctx context.Context, userID int64, hashes []string) (map[string]bool, error) {
+	rows, err := q.pool.Query(ctx, `
+		SELECT blob_sha256 FROM media WHERE owner_id = $1 AND blob_sha256 = ANY($2)`, userID, hashes)
+	if err != nil {
+		return nil, err
+	}
+	shas, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	owned := make(map[string]bool, len(shas))
+	for _, s := range shas {
+		owned[s] = true
+	}
+	return owned, nil
+}
