@@ -18,12 +18,13 @@ import (
 )
 
 // fileState caches a file's hash keyed by path+size+mtime so unchanged files
-// are not re-hashed on every scan, and whether it was uploaded to this server.
+// are not re-hashed on every scan. Whether the server already has a file is
+// never cached: a server can be reset or replaced behind the same URL, so every
+// run asks it (/api/v1/media/check, cheap: hashes only).
 type fileState struct {
-	Size     int64  `json:"size"`
-	ModNano  int64  `json:"mod"`
-	SHA256   string `json:"sha256"`
-	Uploaded bool   `json:"uploaded"`
+	Size    int64  `json:"size"`
+	ModNano int64  `json:"mod"`
+	SHA256  string `json:"sha256"`
 }
 
 type pusher struct {
@@ -44,10 +45,8 @@ func (p *pusher) loadState() error {
 	if err != nil {
 		return err
 	}
-	// Per server: "uploaded" is only true for the server it was uploaded to. A
-	// shared cache made a fresh server (new cluster, new URL) receive nothing.
-	sum := sha256.Sum256([]byte(p.client.Server))
-	p.statePath = filepath.Join(dir, "bodega", "state-"+hex.EncodeToString(sum[:6])+".json")
+	// Hash cache only (see fileState), so it is independent of the server.
+	p.statePath = filepath.Join(dir, "bodega", "hashes.json")
 	p.state = map[string]fileState{}
 	b, err := os.ReadFile(p.statePath)
 	if err == nil {
@@ -80,43 +79,40 @@ func (p *pusher) run(ctx context.Context, roots []string) error {
 	if err != nil {
 		return err
 	}
-	var todo []candidate
-	for _, c := range cands {
-		if !c.st.Uploaded {
-			todo = append(todo, c)
-		}
-	}
-	// Ask the server which of the remaining hashes we already own (e.g. uploaded
-	// from another device) so they are not sent again.
-	for i := 0; i < len(todo); i += checkBatch {
-		batch := todo[i:min(i+checkBatch, len(todo))]
+	// The server is the source of truth for what is already in the library
+	// (uploaded before, from another device, or not at all after a reset).
+	owned := map[string]bool{}
+	for i := 0; i < len(cands); i += checkBatch {
+		batch := cands[i:min(i+checkBatch, len(cands))]
 		hashes := make([]string, len(batch))
 		for j, c := range batch {
 			hashes[j] = c.st.SHA256
 		}
-		owned, err := p.client.Owned(ctx, hashes)
+		got, err := p.client.Owned(ctx, hashes)
 		if err != nil {
 			return fmt.Errorf("check hashes: %w", err)
 		}
-		for j := range batch {
-			if owned[batch[j].st.SHA256] {
-				batch[j].st.Uploaded = true
-				p.setState(batch[j].path, batch[j].st)
-			}
+		for h := range got {
+			owned[h] = true
 		}
 	}
-	// Identical files in the scan only need one upload; the rest are marked
-	// uploaded once it succeeds (next run sees them as owned).
+	// Identical files in the scan only need one upload.
 	var upload []candidate
+	inLibrary, copies := 0, 0
 	queued := map[string]bool{}
-	for _, c := range todo {
-		if !c.st.Uploaded && !queued[c.st.SHA256] {
+	for _, c := range cands {
+		switch {
+		case owned[c.st.SHA256]:
+			inLibrary++
+		case queued[c.st.SHA256]:
+			copies++
+		default:
 			queued[c.st.SHA256] = true
 			upload = append(upload, c)
 		}
 	}
 	fmt.Printf("%d files scanned, %d already in library, %d identical copies, %d to upload\n",
-		len(cands), len(cands)-len(todo), len(todo)-len(upload), len(upload))
+		len(cands), inLibrary, copies, len(upload))
 	if p.dryRun {
 		for _, c := range upload {
 			fmt.Println("would upload", c.path)
@@ -207,8 +203,6 @@ func (p *pusher) uploadAll(ctx context.Context, cands []candidate) error {
 					fmt.Fprintf(os.Stderr, "[%d/%d] FAIL %s: %v\n", n, len(cands), c.path, err)
 					continue
 				}
-				c.st.Uploaded = true
-				p.setState(c.path, c.st)
 				note := ""
 				if res.Duplicate {
 					note = " (content already in archive)"

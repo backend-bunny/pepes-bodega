@@ -53,6 +53,8 @@ curl -sN "$SERVER/api/v1/events" >"$LOGS/events.log" &
 pids+=($!)
 
 export BODEGA_SERVER=$SERVER BODEGA_TOKEN=unused-with-dev-auth
+# Keep the CLI's hash cache out of the user's ~/.cache.
+export XDG_CACHE_HOME=$LOCAL_STACK_DIR/../cache
 "$LOCAL_STACK_DIR/../bodega" push --device e2e "$work"
 
 fail() { echo "FAIL: $*" >&2; echo "--- worker log"; tail -40 "$LOGS/worker.log"; exit 1; }
@@ -78,8 +80,6 @@ sem=$(api "/api/v1/search?q=escalator" | jq .semantic)
 # Pure-CLIP query (no word matches any OCR/tag text); measured margin ~0.05 over the next item.
 r=$(top "cartoon characters riding an escalator"); [[ $r == "escelator land.mp4" ]] || fail "semantic search got '$r'"
 
-audio_id=$(api /api/v1/media | jq '.items[] | select(.original_filename == "audio-clip.webm") | .id')
-api "/api/v1/media/$audio_id" | jq -e '(.transcript // "") | length > 0' >/dev/null || fail "no Whisper transcript for audio-clip.webm"
 # Direct (text) matches vs vaguely related (CLIP-only), always in that order.
 search() { api "/api/v1/search?q=$(jq -rn --arg q "$1" '$q|@uri')"; }
 ordered='[.items[].match] as $m | ($m | index("related")) as $i
@@ -94,6 +94,8 @@ done
 [[ $(search "cartoon characters riding an escalator" | jq -r '.items[0].match') == related ]] \
   || fail "pure semantic hit not marked related"
 
+audio_id=$(api /api/v1/media | jq '.items[] | select(.original_filename == "audio-clip.webm") | .id')
+api "/api/v1/media/$audio_id" | jq -e '(.transcript // "") | length > 0' >/dev/null || fail "no Whisper transcript for audio-clip.webm"
 
 id=$(api /api/v1/media | jq '.items[0].id')
 api "/api/v1/media/$id" | jq -e '.tags | length > 0' >/dev/null || fail "no tags on media $id"
@@ -116,5 +118,11 @@ small_id=$(api /api/v1/media | jq '.items[] | select(.original_filename == "cels
 node web/tests/ui-smoke.mjs "$SERVER" 6 "$small_id" || fail "UI smoke test"
 sleep 1
 [[ $(events | tail -1 | jq .stats.media) == 5 ]] || fail "SSE: delete not reflected: $(events | tail -1)"
+
+# The server, not the CLI's local cache, decides what to upload: after the
+# delete above, pushing the same folder (cache warm) must restore exactly 1 file.
+out=$("$LOCAL_STACK_DIR/../bodega" push --device e2e "$work")
+grep -q "1 to upload" <<<"$out" || fail "re-push after delete: $(head -1 <<<"$out")"
+[[ $(api /api/v1/stats | jq .media) == 6 ]] || fail "re-push did not restore the deleted item"
 
 echo "E2E OK"

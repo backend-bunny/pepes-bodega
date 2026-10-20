@@ -6,6 +6,7 @@ those point at a shared PVC (see the Helm chart's modelCache values).
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 from functools import cached_property
@@ -32,6 +33,10 @@ class Models:
         import torch
 
         torch.set_num_threads(self.cfg.torch_threads)
+        # The inter-op pool defaults to all cores; one is enough for our models.
+        # It can only be set before torch first runs anything in this process.
+        with contextlib.suppress(RuntimeError):
+            torch.set_num_interop_threads(1)
         log.info("loading CLIP %s/%s", self.cfg.clip_model, self.cfg.clip_pretrained)
         model, _, preprocess = open_clip.create_model_and_transforms(
             self.cfg.clip_model, pretrained=self.cfg.clip_pretrained
@@ -76,7 +81,9 @@ class Models:
         from rapidocr_onnxruntime import RapidOCR
 
         log.info("loading RapidOCR")
-        return RapidOCR()
+        # onnxruntime defaults to every core per session (det, cls, rec); keep OCR
+        # within the same CPU budget as CLIP/Whisper (BODEGA_TORCH_THREADS).
+        return RapidOCR(intra_op_num_threads=self.cfg.torch_threads, inter_op_num_threads=1)
 
     def ocr(self, image: Image.Image) -> str:
         result, _ = self._ocr(np.asarray(image))

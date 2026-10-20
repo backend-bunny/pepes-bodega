@@ -207,8 +207,12 @@ Talos cluster, CloudNativePG (`cnpg.enabled=true` renders a `Cluster` with the
 - Svelte trims whitespace at the start of `{#if}` blocks: `{a}{#if b} · {c}{/if}`
   renders "a· c". Build such text with one expression instead.
 - Go: `defer x.Hijack().Close()` evaluates `Hijack()` immediately; hijack first.
-- The CLI's upload cache is per server URL (`state-<hash>.json`); a shared cache
-  made fresh servers (new cluster, new netbird URL) silently receive nothing.
+- The CLI caches only file hashes (`~/.cache/bodega/hashes.json`); what to upload
+  is always asked from the server (`/api/v1/media/check`). Caching "uploaded"
+  locally made a reset server behind the same URL silently receive nothing.
+- Thread budget: `BODEGA_TORCH_THREADS` must cap torch (intra + inter-op),
+  RapidOCR's onnxruntime sessions (default: all cores each) and OpenMP
+  (`OMP_NUM_THREADS`, set by the chart). Dev also sets a pod CPU limit = threads.
 - In bash with `set -o pipefail`, `x=$(… | grep -o …)` exits silently when grep
   finds nothing — wrap with `{ grep … || true; }` in test scripts.
 

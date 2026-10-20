@@ -30,6 +30,9 @@ spec:
             {{- include "bodega.workerEnv" . | nindent 12 }}
             - name: BODEGA_TORCH_THREADS
               value: {{ .Values.workers.torchThreads | quote }}
+            # numpy/OpenMP pools otherwise size themselves to every core on the node.
+            - name: OMP_NUM_THREADS
+              value: {{ .Values.workers.torchThreads | quote }}
           resources: {{- toYaml .Values.workers.resources | nindent 12 }}
           volumeMounts:
             # Root FS is read-only; /tmp is HOME, TMPDIR and per-job scratch.
@@ -63,6 +66,8 @@ spec:
           env:
             {{- include "bodega.workerEnv" . | nindent 12 }}
             - name: BODEGA_TORCH_THREADS
+              value: {{ .Values.embedder.torchThreads | quote }}
+            - name: OMP_NUM_THREADS
               value: {{ .Values.embedder.torchThreads | quote }}
           resources: {{- toYaml .Values.embedder.resources | nindent 12 }}
           volumeMounts:

@@ -48,6 +48,8 @@ k8s_yaml(helm(
         'workers.autoscaling.maxReplicas=%d' % sizing['workers_max'],
         'workers.torchThreads=%d' % sizing['worker_threads'],
         'workers.resources.limits.memory=' + sizing['worker_memory'],
+        # Hard CPU cap = thread budget, so a worker can't starve the rest of the stack.
+        'workers.resources.limits.cpu=%d' % sizing['worker_threads'],
     ],
 ))
 links = [link('http://localhost:8080', 'localhost (pepe@bodega.local / sangria)')]
