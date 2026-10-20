@@ -128,4 +128,10 @@ out=$("$LOCAL_STACK_DIR/../bodega" push --device e2e "$work")
 grep -q "1 to upload" <<<"$out" || fail "re-push after delete: $(head -1 <<<"$out")"
 [[ $(api /api/v1/stats | jq .media) == 6 ]] || fail "re-push did not restore the deleted item"
 
+# Very tall media must fit the viewer, not run over the sections below it.
+ffmpeg -v error -f lavfi -i "color=c=white:s=400x1600" -frames:v 1 "$LOCAL_STACK_DIR/../tall.png"
+tall_id=$("$LOCAL_STACK_DIR/../bodega" push --device e2e "$LOCAL_STACK_DIR/../tall.png" >/dev/null &&
+  api /api/v1/media | jq '.items[] | select(.original_filename == "tall.png") | .id')
+node web/tests/tall-image.mjs "$SERVER" "$tall_id" || fail "tall image overlaps the viewer"
+
 echo "E2E OK"

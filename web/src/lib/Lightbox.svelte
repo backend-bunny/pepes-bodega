@@ -213,12 +213,19 @@
 		height: 100vh;
 		height: 100dvh;
 	}
+	/* The stage height is set explicitly: max-height: 100% on the media does not
+	   resolve against an auto-height grid row, so a tall image would render at
+	   full size and run over the sections below. */
 	.stage {
+		--stage-h: 100dvh;
+		--stage-pad: var(--sp-5);
 		position: relative;
 		display: grid;
 		place-items: center;
+		height: var(--stage-h);
 		min-height: 0;
-		padding: var(--sp-5);
+		padding: var(--stage-pad);
+		overflow: hidden;
 		cursor: zoom-out;
 	}
 	.stage > :global(*) {
@@ -227,7 +234,7 @@
 	.stage img,
 	.stage video {
 		max-width: 100%;
-		max-height: 100%;
+		max-height: calc(var(--stage-h) - 2 * var(--stage-pad));
 		object-fit: contain;
 		border-radius: var(--r-sm);
 		background: var(--c-surface);
@@ -369,9 +376,8 @@
 			height: auto;
 		}
 		.stage {
-			height: 62vh;
-			height: 62dvh;
-			padding: var(--sp-2);
+			--stage-h: 62dvh;
+			--stage-pad: var(--sp-2);
 		}
 		.info {
 			border-left: 0;
