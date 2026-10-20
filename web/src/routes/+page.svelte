@@ -1,35 +1,45 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, pushState, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, subscribeProgress, type MediaItem, type Stats } from '#lib/api.ts';
-	import MediaCard from '#lib/MediaCard.svelte';
+	import JustifiedGrid from '#lib/JustifiedGrid.svelte';
+	import Lightbox from '#lib/Lightbox.svelte';
+
+	type Filter = 'all' | 'direct' | 'related';
 
 	let query = $state(page.url.searchParams.get('q') ?? '');
+	let applied = $state<string | null>(null); // query the current results belong to
 	let items = $state<MediaItem[]>([]);
 	let stats = $state<Stats | null>(null);
 	let loading = $state(false);
 	let done = $state(false);
 	let semantic = $state(true);
 	let error = $state('');
+	let filter = $state<Filter>('all');
 	let sentinel: HTMLDivElement;
 
-	const searching = $derived((page.url.searchParams.get('q') ?? '').trim() !== '');
+	const searching = $derived((applied ?? '') !== '');
 	// Search results come sorted: direct (text) matches first, then related (CLIP-only).
 	const direct = $derived(items.filter((i) => i.match === 'direct'));
 	const related = $derived(items.filter((i) => i.match === 'related'));
+	const visible = $derived(
+		!searching || filter === 'all' ? items : filter === 'direct' ? direct : related
+	);
 
-	async function run() {
-		const q = (page.url.searchParams.get('q') ?? '').trim();
+	async function run(q: string) {
 		items = [];
 		done = false;
 		error = '';
+		filter = 'all';
 		if (q) {
 			loading = true;
 			try {
 				const res = await api.search(q);
-				items = res.items;
-				semantic = res.semantic;
+				if (applied === q) {
+					items = res.items;
+					semantic = res.semantic;
+				}
 			} catch (e) {
 				error = String(e);
 			} finally {
@@ -59,15 +69,39 @@
 	function submit(e: SubmitEvent) {
 		e.preventDefault();
 		const q = query.trim();
-		goto(q ? `/?q=${encodeURIComponent(q)}` : '/');
+		goto(q ? `/?q=${encodeURIComponent(q)}` : '/', { reset: false });
 	}
 
-	// Depend only on the query string. run() reads and writes items/loading/done;
-	// if those were tracked, every fetch would re-trigger the effect (infinite loop).
+	// Load results for "/?q=…". The lightbox shallow-routes to /m/<id>, which must
+	// not reload the results underneath it, so other paths are ignored.
 	$effect(() => {
-		page.url.search;
-		untrack(run);
+		if (page.url.pathname !== '/') return;
+		const q = (page.url.searchParams.get('q') ?? '').trim();
+		untrack(() => {
+			if (q === applied) return;
+			applied = q;
+			query = q;
+			run(q);
+		});
 	});
+
+	// ---- lightbox (shallow routing) ----
+	const openId = $derived(page.state.lightbox);
+	const openIndex = $derived(openId == null ? -1 : visible.findIndex((i) => i.id === openId));
+
+	function open(item: MediaItem) {
+		pushState(`/m/${item.id}`, { lightbox: item.id });
+	}
+	function show(item: MediaItem) {
+		replaceState(`/m/${item.id}`, { lightbox: item.id });
+	}
+	function close() {
+		history.back();
+	}
+	function removed(id: number) {
+		items = items.filter((i) => i.id !== id);
+		close();
+	}
 
 	onMount(() => {
 		// Initial stats; live updates arrive over SSE as workers process items.
@@ -79,63 +113,81 @@
 				if (status) item.status = status;
 			}
 		});
-		const io = new IntersectionObserver((e) => e[0].isIntersecting && more(), { rootMargin: '600px' });
+		const io = new IntersectionObserver((e) => e[0].isIntersecting && more(), { rootMargin: '800px' });
 		io.observe(sentinel);
 		return () => {
 			io.disconnect();
 			stopProgress();
 		};
 	});
+
+	const chips: [Filter, string][] = [
+		['all', 'All'],
+		['direct', 'Matches'],
+		['related', 'Vaguely related']
+	];
+	const counts = $derived({ all: items.length, direct: direct.length, related: related.length });
 </script>
 
-<main>
-	<form onsubmit={submit}>
+<main class="page">
+	<form onsubmit={submit} role="search">
 		<!-- svelte-ignore a11y_autofocus -->
 		<input
 			type="search"
 			bind:value={query}
 			placeholder="Search memes: “surprised cat”, “this is fine”, text in the image, words said in a clip…"
+			aria-label="Search"
 			autofocus
 		/>
-		<button class="primary">Search</button>
+		<button class="btn btn-primary">Search</button>
 	</form>
 
-	<p class="muted meta">
+	{#if searching && done && items.length}
+		<div class="chips" role="radiogroup" aria-label="Match type">
+			{#each chips as [key, label] (key)}
+				<button
+					class="chip"
+					role="radio"
+					aria-checked={filter === key}
+					disabled={counts[key] === 0}
+					onclick={() => (filter = key)}
+				>
+					{label} <span class="mono">{counts[key]}</span>
+				</button>
+			{/each}
+		</div>
+	{/if}
+
+	<p class="meta muted">
 		{#if searching}
-			{direct.length} {direct.length === 1 ? 'match' : 'matches'} · {semantic
+			<span class="mono">{direct.length}</span>
+			{direct.length === 1 ? 'match' : 'matches'} · {semantic
 				? `${related.length} vaguely related`
 				: 'semantic search unavailable, text matches only'}
 		{:else if stats}
-			{stats.media} items · {stats.by_status.ready ?? 0} ready · {(stats.by_status.pending ?? 0) +
-				(stats.by_status.processing ?? 0)} in the kitchen · {stats.near_duplicates} near-duplicates
+			<span class="mono">{stats.media}</span> items · <span class="mono">{stats.by_status.ready ?? 0}</span> ready
+			· <span class="mono">{(stats.by_status.pending ?? 0) + (stats.by_status.processing ?? 0)}</span> in the
+			kitchen · <span class="mono">{stats.near_duplicates}</span> near-duplicates
 		{/if}
 	</p>
 
 	{#if error}<p class="error">{error}</p>{/if}
 
 	{#if searching}
-		<div class="grid">
-			{#each direct as item (item.id)}
-				<MediaCard {item} />
-			{/each}
-		</div>
-		{#if related.length}
-			<div class="divider" role="separator">
-				<span>{direct.length ? 'Vaguely related' : 'No direct matches. Vaguely related'}</span>
-				<small class="muted">similar look or meaning, but no tag or text match</small>
-			</div>
-			<div class="grid">
-				{#each related as item (item.id)}
-					<MediaCard {item} />
-				{/each}
-			</div>
+		{#if filter !== 'related'}
+			<JustifiedGrid items={direct} onopen={open} />
+		{/if}
+		{#if filter !== 'direct' && related.length}
+			{#if filter === 'all'}
+				<div class="divider" role="separator">
+					<span>{direct.length ? 'Vaguely related' : 'No direct matches. Vaguely related'}</span>
+					<small class="muted">similar look or meaning, but no tag or text match</small>
+				</div>
+			{/if}
+			<JustifiedGrid items={related} onopen={open} />
 		{/if}
 	{:else}
-		<div class="grid">
-			{#each items as item (item.id)}
-				<MediaCard {item} />
-			{/each}
-		</div>
+		<JustifiedGrid {items} onopen={open} />
 	{/if}
 
 	{#if !loading && done && items.length === 0}
@@ -147,41 +199,88 @@
 	<div bind:this={sentinel}></div>
 </main>
 
+{#if openId != null}
+	<Lightbox
+		id={openId}
+		startAt={visible[openIndex]?.match_ts ?? 0}
+		onclose={close}
+		onprev={openIndex > 0 ? () => show(visible[openIndex - 1]) : undefined}
+		onnext={openIndex >= 0 && openIndex < visible.length - 1 ? () => show(visible[openIndex + 1]) : undefined}
+		onnavigate={show}
+		onremoved={removed}
+	/>
+{/if}
+
 <style>
 	form {
 		display: flex;
-		gap: 0.5rem;
+		gap: var(--sp-2);
 	}
 	form input {
-		flex: 1;
-		font-size: 1.1rem;
+		font-size: var(--text-lg);
+		padding: var(--sp-3) var(--sp-4);
+	}
+	.chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--sp-2);
+		margin-top: var(--sp-3);
+	}
+	.chip {
+		display: inline-flex;
+		gap: var(--sp-2);
+		align-items: baseline;
+		padding: var(--sp-1) var(--sp-3);
+		border: 1px solid var(--c-border);
+		border-radius: var(--r-pill);
+		background: none;
+		color: var(--c-muted);
+		font-size: var(--text-sm);
+		cursor: pointer;
+	}
+	.chip .mono {
+		color: var(--c-subtle);
+		font-size: var(--text-xs);
+	}
+	.chip[aria-checked='true'] {
+		border-color: var(--c-accent);
+		background: var(--c-accent-soft);
+		color: var(--c-text);
+	}
+	.chip:disabled {
+		opacity: 0.4;
+		cursor: default;
 	}
 	.meta {
-		margin: 0.5rem 0 1rem;
-		font-size: 0.9rem;
+		margin: var(--sp-3) 0 var(--sp-4);
+		font-size: var(--text-sm);
 	}
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-		gap: 0.6rem;
+	.meta .mono {
+		color: var(--c-text);
 	}
 	.divider {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: baseline;
-		gap: 0.75rem;
-		margin: 1.5rem 0 0.75rem;
-		padding-top: 0.75rem;
-		border-top: 1px dashed #4a3f37;
+		gap: var(--sp-3);
+		margin: var(--sp-6) 0 var(--sp-3);
+		padding-top: var(--sp-3);
+		border-top: 1px solid var(--c-border);
 	}
 	.divider span {
+		font-family: var(--font-display);
 		font-weight: 600;
-		color: var(--accent-2);
 	}
 	.error {
-		color: var(--danger);
+		color: var(--c-danger);
 	}
 	.empty {
+		padding: var(--sp-8);
 		text-align: center;
-		padding: 3rem;
+	}
+	@media (max-width: 600px) {
+		form .btn {
+			display: none;
+		}
 	}
 </style>

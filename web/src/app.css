@@ -1,26 +1,73 @@
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/jetbrains-mono';
+
+/* Design tokens. Use these everywhere; no raw colours, sizes or radii in components. */
 :root {
-	--bg: #14110f;
-	--panel: #1f1a17;
-	--panel-2: #2a231f;
-	--text: #f1e9df;
-	--muted: #a99c8f;
-	--accent: #6cbf43; /* pepe green */
-	--accent-2: #e8b33a; /* bodega neon */
-	--danger: #e0533d;
-	--radius: 10px;
+	/* colour: warm near-black neutrals, one accent */
+	--c-bg: #121110;
+	--c-surface: #1b1917;
+	--c-surface-2: #242120;
+	--c-surface-3: #2e2a27;
+	--c-border: #34302c;
+	--c-text: #ede7df;
+	--c-muted: #a39a90;
+	--c-subtle: #736b63;
+	--c-accent: #f0a63a; /* amber */
+	--c-accent-hover: #f6b85c;
+	--c-accent-ink: #1f1404; /* text on accent */
+	--c-accent-soft: rgb(240 166 58 / 0.14);
+	--c-danger: #e86a57;
+	--c-overlay: rgb(14 13 12 / 0.92);
+	--c-scrim: linear-gradient(to top, rgb(0 0 0 / 0.9) 55%, rgb(0 0 0 / 0));
+
+	/* type */
+	--font-display: 'Bricolage Grotesque Variable', system-ui, sans-serif;
+	--font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+	--text-2xs: 0.6875rem;
+	--text-xs: 0.75rem;
+	--text-sm: 0.8125rem;
+	--text-base: 0.9375rem;
+	--text-lg: 1.125rem;
+	--text-xl: 1.375rem;
+	--leading: 1.45;
+
+	/* spacing (4px scale) */
+	--sp-1: 0.25rem;
+	--sp-2: 0.5rem;
+	--sp-3: 0.75rem;
+	--sp-4: 1rem;
+	--sp-5: 1.5rem;
+	--sp-6: 2rem;
+	--sp-8: 3rem;
+
+	/* radius */
+	--r-sm: 4px;
+	--r-md: 8px;
+	--r-lg: 12px;
+	--r-pill: 999px;
+
+	/* layout */
+	--header-h: 48px;
+	--page-max: 1440px;
+	--gutter: var(--sp-4);
+	--focus: 0 0 0 2px var(--c-bg), 0 0 0 4px var(--c-accent);
+
 	color-scheme: dark;
 }
+
 * {
 	box-sizing: border-box;
 }
 body {
 	margin: 0;
-	background: var(--bg);
-	color: var(--text);
-	font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
+	background: var(--c-bg);
+	color: var(--c-text);
+	font: var(--text-base) / var(--leading) var(--font-ui);
+	-webkit-font-smoothing: antialiased;
 }
 a {
-	color: var(--accent);
+	color: inherit;
 	text-decoration: none;
 }
 button,
@@ -28,50 +75,112 @@ input {
 	font: inherit;
 	color: inherit;
 }
-button {
-	background: var(--panel-2);
-	border: 1px solid #3a312b;
-	border-radius: var(--radius);
-	padding: 0.45rem 0.9rem;
-	cursor: pointer;
+:focus-visible {
+	outline: none;
+	box-shadow: var(--focus);
+	border-radius: var(--r-sm);
 }
-button:hover {
-	border-color: var(--accent);
-}
-button.primary {
-	background: var(--accent);
-	color: #10200a;
-	border-color: var(--accent);
+h1,
+h2,
+h3 {
+	margin: 0;
 	font-weight: 600;
+	line-height: 1.2;
 }
-button.danger {
-	border-color: var(--danger);
-	color: var(--danger);
+
+/* buttons */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--sp-2);
+	padding: var(--sp-2) var(--sp-4);
+	border: 1px solid var(--c-border);
+	border-radius: var(--r-md);
+	background: var(--c-surface-2);
+	cursor: pointer;
+	font-size: var(--text-sm);
+	font-weight: 500;
+	white-space: nowrap;
 }
+.btn:hover {
+	background: var(--c-surface-3);
+}
+.btn-primary {
+	background: var(--c-accent);
+	border-color: var(--c-accent);
+	color: var(--c-accent-ink);
+}
+.btn-primary:hover {
+	background: var(--c-accent-hover);
+}
+/* quiet text-only action (Remove, Revoke, Cancel) */
+.btn-quiet {
+	padding: var(--sp-1) 0;
+	border: 0;
+	background: none;
+	color: var(--c-muted);
+	cursor: pointer;
+	font-size: var(--text-sm);
+	text-decoration: underline;
+	text-decoration-color: var(--c-border);
+	text-underline-offset: 3px;
+}
+.btn-quiet:hover {
+	color: var(--c-text);
+}
+/* the destructive button inside a confirmation */
+.btn-quiet.danger {
+	color: var(--c-danger);
+	text-decoration-color: currentColor;
+}
+.btn-quiet.danger:hover {
+	color: var(--c-text);
+}
+
 input[type='text'],
 input[type='search'] {
-	background: var(--panel);
-	border: 1px solid #3a312b;
-	border-radius: var(--radius);
-	padding: 0.55rem 0.8rem;
+	width: 100%;
+	padding: var(--sp-2) var(--sp-3);
+	border: 1px solid var(--c-border);
+	border-radius: var(--r-md);
+	background: var(--c-surface);
 }
-input:focus {
-	outline: 2px solid var(--accent);
-	outline-offset: 1px;
+input::placeholder {
+	color: var(--c-subtle);
 }
-main {
-	max-width: 1400px;
-	margin: 0 auto;
-	padding: 1rem;
+
+.mono {
+	font-family: var(--font-mono);
+	font-size: 0.92em;
+	font-variant-numeric: tabular-nums;
 }
 .muted {
-	color: var(--muted);
+	color: var(--c-muted);
 }
-.pill {
-	display: inline-block;
-	padding: 0.1rem 0.55rem;
-	border-radius: 999px;
-	background: var(--panel-2);
-	font-size: 0.8rem;
-	margin: 0 0.25rem 0.25rem 0;
+.page {
+	max-width: var(--page-max);
+	margin: 0 auto;
+	padding: var(--sp-4) var(--gutter) var(--sp-8);
+}
+.page-narrow {
+	max-width: calc(720px + 2 * var(--gutter));
+}
+.section-title {
+	font-family: var(--font-display);
+	font-size: var(--text-lg);
+	margin-bottom: var(--sp-3);
+}
+.label {
+	color: var(--c-subtle);
+	font-size: var(--text-xs);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+@media (max-width: 600px) {
+	:root {
+		--gutter: var(--sp-3);
+	}
+}
+input[type='search']::-webkit-search-cancel-button {
+	appearance: none;
 }

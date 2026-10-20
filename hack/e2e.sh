@@ -93,6 +93,9 @@ done
   || fail "pure semantic query produced direct matches"
 [[ $(search "cartoon characters riding an escalator" | jq -r '.items[0].match') == related ]] \
   || fail "pure semantic hit not marked related"
+# Where a direct hit matched, with the query words marked (⟦…⟧) in a snippet.
+[[ $(search "cassandra weather" | jq -r '.items[0] | "\(.match_source)|\(.match_snippet)"') == "text|"*"⟦weather⟧"* ]] \
+  || fail "OCR hit lacks source/snippet: $(search "cassandra weather" | jq -c '.items[0] | {match_source, match_snippet}')"
 
 audio_id=$(api /api/v1/media | jq '.items[] | select(.original_filename == "audio-clip.webm") | .id')
 api "/api/v1/media/$audio_id" | jq -e '(.transcript // "") | length > 0' >/dev/null || fail "no Whisper transcript for audio-clip.webm"

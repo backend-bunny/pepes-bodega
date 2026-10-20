@@ -25,6 +25,10 @@ export interface MediaItem {
 	duplicate_of: string | null;
 	score?: number;
 	match?: 'direct' | 'related';
+	/** Direct hits: where the query matched. */
+	match_source?: 'text' | 'speech' | 'tag' | 'filename';
+	/** Direct text/speech hits: excerpt with ⟦…⟧ around matched words. */
+	match_snippet?: string;
 	match_ts?: number | null;
 }
 
@@ -82,6 +86,8 @@ export const api = {
 			`/api/v1/search?q=${encodeURIComponent(q)}&limit=${limit}`
 		),
 	get: (id: number) => req<MediaDetail>(`/api/v1/media/${id}`),
+	similar: (id: number, limit = 12) =>
+		req<{ items: MediaItem[] }>(`/api/v1/media/${id}/similar?limit=${limit}`),
 	remove: (id: number) => req<void>(`/api/v1/media/${id}`, { method: 'DELETE' }),
 	tokens: () => req<{ items: ApiToken[] }>('/api/v1/tokens'),
 	createToken: (name: string) =>
@@ -97,6 +103,7 @@ export interface UploadResult {
 	media_id: number;
 	sha256: string;
 	created: boolean;
+	new_blob: boolean;
 	duplicate: boolean;
 }
 
@@ -121,16 +128,6 @@ export function upload(file: File, onProgress: (frac: number) => void): Promise<
 		xhr.onerror = () => reject(new Error('network error'));
 		xhr.send(form);
 	});
-}
-
-export function formatBytes(n: number): string {
-	const units = ['B', 'KB', 'MB', 'GB'];
-	let i = 0;
-	while (n >= 1024 && i < units.length - 1) {
-		n /= 1024;
-		i++;
-	}
-	return `${n.toFixed(i ? 1 : 0)} ${units[i]}`;
 }
 
 export interface ProgressEvent {

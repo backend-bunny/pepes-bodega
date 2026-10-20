@@ -51,8 +51,8 @@ try {
 	// Other pages render their main content.
 	const checks = [
 		['/?q=bother', 'p.meta', /1 match · \d+ vaguely related/],
-		['/settings', 'h2', /Device tokens/],
-		['/upload', 'label.drop', /Drop memes here/],
+		['/settings', 'h1', /Device tokens/],
+		['/upload', '.drop', /Drop memes here/],
 	];
 	for (const [path, selector, text] of checks) {
 		await page.goto(`${server}${path}`);
@@ -67,16 +67,59 @@ try {
 	await page.goto(`${server}/?q=bother`);
 	try {
 		await page.locator('.divider').waitFor({ timeout: 10000 });
-		const firstGrid = page.locator('main .grid').first();
+		const firstGrid = page.locator('main .justified').first();
 		if ((await firstGrid.locator('a.card[title="200% bother.gif"]').count()) !== 1)
 			fail('direct match not in the first grid');
 	} catch {
 		fail('search page has no direct/related separator');
 	}
 
+	// The direct text hit says where it matched, with the query highlighted.
+	const snippet = page.locator('a.card[title="200% bother.gif"] .snippet');
+	if (!(await snippet.count())) fail('text hit has no match-source snippet');
+	else if (!/bother/i.test((await snippet.locator('mark').first().textContent()) ?? ''))
+		fail('snippet does not highlight the query');
+
+	// Filter chips: "Matches" hides the related group.
+	await page.locator('.chip', { hasText: 'Matches' }).click();
+	if (await page.locator('.divider').count()) fail('Matches filter still shows the related group');
+	await page.locator('.chip', { hasText: 'All' }).click();
+
+	// Lightbox: shallow route to /m/<id>, arrow keys navigate, Esc returns to the results.
+	await page.locator('a.card').first().click();
+	const title = page.locator('[role=dialog] h2');
+	await title.filter({ hasText: /\S/ }).waitFor({ timeout: 10000 });
+	if (!/\/m\/\d+$/.test(page.url())) fail(`lightbox URL is ${page.url()}`);
+	const firstTitle = await title.textContent();
+	await page.keyboard.press('ArrowRight');
+	await page
+		.waitForFunction((t) => document.querySelector('[role=dialog] h2')?.textContent !== t, firstTitle, {
+			timeout: 5000
+		})
+		.catch(() => fail('ArrowRight did not move to the next item'));
+	await page.keyboard.press('Escape');
+	await page.waitForURL(/\?q=bother/, { timeout: 5000 }).catch(() => fail(`Esc did not return: ${page.url()}`));
+	if (await page.locator('[role=dialog]').count()) fail('lightbox still open after Esc');
+
+	// Clicking the media keeps the viewer open; clicking the backdrop around it closes.
+	await page.locator('a.card').first().click();
+	await title.filter({ hasText: /\S/ }).waitFor({ timeout: 10000 });
+	await page.locator('.stage img, .stage video').first().click();
+	await page.waitForTimeout(300);
+	if (!(await page.locator('[role=dialog]').count())) fail('clicking the image closed the viewer');
+	const stage = await page.locator('.stage').boundingBox();
+	await page.mouse.click(stage.x + 6, stage.y + 6);
+	await page.waitForURL(/\?q=bother/, { timeout: 5000 }).catch(() => fail(`backdrop click did not return: ${page.url()}`));
+	if (await page.locator('[role=dialog]').count()) fail('lightbox still open after backdrop click');
+
+	// Standalone /m/<id> (reload / shared link) renders the same lightbox.
 	const firstId = await (await page.request.get(`${server}/api/v1/media`)).json().then((b) => b.items[0].id);
 	await page.goto(`${server}/m/${firstId}`);
-	await page.locator('aside h2').waitFor({ timeout: 10000 }).catch(() => fail('detail page did not render'));
+	await page
+		.locator('[role=dialog] h2')
+		.filter({ hasText: /\S/ })
+		.waitFor({ timeout: 10000 })
+		.catch(() => fail('detail page did not render'));
 
 	if (errors.length) fail(`page errors: ${errors.join(' | ')}`);
 } finally {

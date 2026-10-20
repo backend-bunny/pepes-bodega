@@ -206,8 +206,12 @@ type MediaItem struct {
 	Score float64 `json:"score,omitempty"`
 	// Match is "direct" when the query matched text in the item (tag, OCR,
 	// transcript or filename, fuzzily), "related" when only CLIP similarity found it.
-	Match   string   `json:"match,omitempty"`
-	MatchTS *float32 `json:"match_ts,omitempty"`
+	Match string `json:"match,omitempty"`
+	// For direct hits: where the query matched ("text" = in the image, "speech",
+	// "tag", "filename") and a snippet; ⟦…⟧ marks highlighted words.
+	MatchSource  *string  `json:"match_source,omitempty"`
+	MatchSnippet *string  `json:"match_snippet,omitempty"`
+	MatchTS      *float32 `json:"match_ts,omitempty"`
 }
 
 const mediaCols = `m.id, b.sha256, m.original_filename, m.source_device, m.uploaded_at,
@@ -283,18 +287,44 @@ func (q *Queries) Search(ctx context.Context, userID int64, text string, embeddi
 			FROM (SELECT id, r, false AS direct FROM vec
 			      UNION ALL SELECT id, r, true FROM txt) u
 			GROUP BY id
-		)
-		SELECT `+mediaCols+`, f.score, f.direct,
-			(SELECT fr.ts_s FROM frames fr
-			 WHERE $2::vector IS NOT NULL AND fr.blob_sha256 = b.sha256 AND b.kind <> 'image'
-			 ORDER BY fr.embedding <=> $2::vector LIMIT 1)
-		FROM fused f
-		JOIN media m ON m.id = f.id
-		JOIN blobs b ON b.sha256 = m.blob_sha256
+		),
 		-- Direct (text) matches always first, so vague CLIP-only hits can never
 		-- push them past the limit; within each group by fused score.
-		ORDER BY f.direct DESC, f.score DESC
-		LIMIT $5`, userID, vec, text, rrfK, limit)
+		ranked AS (
+			SELECT id, score, direct FROM fused
+			ORDER BY direct DESC, score DESC
+			LIMIT $5
+		)
+		SELECT `+mediaCols+`, r.score, r.direct,
+			(SELECT fr.ts_s FROM frames fr
+			 WHERE $2::vector IS NOT NULL AND fr.blob_sha256 = b.sha256 AND b.kind <> 'image'
+			 ORDER BY fr.embedding <=> $2::vector LIMIT 1),
+			src.source, src.snippet
+		FROM ranked r
+		JOIN media m ON m.id = r.id
+		JOIN blobs b ON b.sha256 = m.blob_sha256
+		-- Where a direct hit matched, most informative source first, with a
+		-- highlighted snippet (⟦…⟧ marks matched words; fuzzy hits get none).
+		LEFT JOIN LATERAL (
+			SELECT s.source,
+				CASE WHEN s.source IN ('text', 'speech')
+					THEN ts_headline('simple', s.body, websearch_to_tsquery('simple', $3),
+						'StartSel=⟦, StopSel=⟧, MinWords=6, MaxWords=18, MaxFragments=1')
+					ELSE s.body END AS snippet
+			FROM (
+				SELECT 1 AS prio, 'text' AS source,
+					(SELECT string_agg(DISTINCT fr.ocr_text, ' · ') FROM frames fr
+					 WHERE fr.blob_sha256 = b.sha256 AND fr.ocr_text <> '') AS body
+				UNION ALL SELECT 2, 'speech', t.text FROM transcripts t WHERE t.blob_sha256 = b.sha256
+				UNION ALL SELECT 3, 'tag', tg.tag FROM tags tg WHERE tg.blob_sha256 = b.sha256
+				UNION ALL SELECT 4, 'filename', m.original_filename
+			) s
+			WHERE r.direct AND s.body IS NOT NULL
+			  AND (to_tsvector('simple', s.body) @@ websearch_to_tsquery('simple', $3) OR $3 <% s.body)
+			ORDER BY s.prio
+			LIMIT 1
+		) src ON true
+		ORDER BY r.direct DESC, r.score DESC`, userID, vec, text, rrfK, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -304,11 +334,12 @@ func (q *Queries) Search(ctx context.Context, userID int64, text string, embeddi
 		var score float64
 		var direct bool
 		var ts *float32
-		it, err := scanMedia(rows, &score, &direct, &ts)
+		var source, snippet *string
+		it, err := scanMedia(rows, &score, &direct, &ts, &source, &snippet)
 		if err != nil {
 			return nil, err
 		}
-		it.Score, it.MatchTS = score, ts
+		it.Score, it.MatchTS, it.MatchSource, it.MatchSnippet = score, ts, source, snippet
 		it.Match = "related"
 		if direct {
 			it.Match = "direct"
@@ -467,4 +498,34 @@ func (q *Queries) OwnedBlobs(ctx context.Context, userID int64, hashes []string)
 		owned[s] = true
 	}
 	return owned, nil
+}
+
+// Similar returns the user's media closest to the given item by CLIP
+// embedding, excluding the item's own near-duplicate group (listed separately).
+func (q *Queries) Similar(ctx context.Context, userID, id int64, limit int) ([]MediaItem, error) {
+	rows, err := q.pool.Query(ctx, `
+		WITH src AS (
+			SELECT b.embedding, coalesce(b.duplicate_of, b.sha256) AS grp
+			FROM media m JOIN blobs b ON b.sha256 = m.blob_sha256
+			WHERE m.owner_id = $1 AND m.id = $2 AND b.embedding IS NOT NULL
+		)
+		SELECT `+mediaCols+`
+		FROM src, media m JOIN blobs b ON b.sha256 = m.blob_sha256
+		WHERE m.owner_id = $1 AND m.id <> $2 AND b.embedding IS NOT NULL
+		  AND coalesce(b.duplicate_of, b.sha256) <> src.grp
+		ORDER BY b.embedding <=> src.embedding
+		LIMIT $3`, userID, id, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MediaItem
+	for rows.Next() {
+		it, err := scanMedia(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
 }

@@ -35,7 +35,11 @@ web upload ─┴─> bodega-api (Go) ───────┼─> Postgres + pg
   Each hit is `match: "direct"` (the text side matched: tag, OCR, transcript or
   filename, fuzzily) or `"related"` (CLIP only). Direct always sorts first
   (`ORDER BY direct DESC, score DESC`, before LIMIT); the GUI splits the two
-  groups with a "Vaguely related" separator.
+  groups with a "Vaguely related" separator. Direct hits also carry `match_source`
+  (`text`|`speech`|`tag`|`filename`, most informative first) and `match_snippet`
+  (`ts_headline`, query words wrapped in ⟦…⟧). `GET /api/v1/media/{id}/similar`
+  ranks the user's other items by CLIP cosine, excluding the item's own
+  near-duplicate group.
 - **Jobs**: API publishes `bodega.jobs.process` with msg-id dedup. Postgres
   `blobs.status` is the source of truth; the API's reconciler re-publishes
   `pending` blobs only when the consumer is idle. Workers send in-progress
@@ -141,6 +145,13 @@ Talos cluster, CloudNativePG (`cnpg.enabled=true` renders a `Cluster` with the
   by `owner_id` — never serve a blob unless `OwnsBlob`.
 - Python: 3.12, uv, ruff (line 120). Heavy CPU work runs in `asyncio.to_thread`
   so NATS heartbeats keep flowing. Models load lazily via `cached_property`.
+- Web UI: design tokens (colour, type, spacing, radius) live in `web/src/app.css`
+  `:root`; components use only `var(--…)`. One accent (amber). Fonts:
+  Bricolage Grotesque (display/logo), JetBrains Mono (ids, hashes, counts,
+  dates), system UI for body. Results use justified rows (`lib/justify.ts`,
+  unit-tested); the detail view is `lib/Lightbox.svelte`, opened with shallow
+  routing (`pushState(/m/<id>, {lightbox})`) over the results, and also
+  rendered standalone by `routes/m/[id]` for reloads and shared links.
 - Web: Svelte 5 runes, TypeScript strict. Imports use `#lib/…` with explicit
   `.ts` extensions (SvelteKit 3). Keep `web/src/lib/api.ts` types in sync with
   `internal/db/queries.go` JSON tags.
@@ -206,6 +217,12 @@ Talos cluster, CloudNativePG (`cnpg.enabled=true` renders a `Cluster` with the
   driving devbox's Chromium (`web/tests/ui-smoke.mjs`, run by `hack/e2e.sh`).
 - Svelte trims whitespace at the start of `{#if}` blocks: `{a}{#if b} · {c}{/if}`
   renders "a· c". Build such text with one expression instead.
+- Perl one-liners: editing UTF-8 files with `perl -0pi` *without* `-CSD -Mutf8`
+  double-encodes every existing non-ASCII char once the replacement contains one
+  (`·` became `Â·`). Use `-CSD -Mutf8`, or the Edit tool.
+- Screenshots: `web/tests/screenshots.mjs` (needs a running API and a session
+  cookie). Never wait for `networkidle` (the SSE stream keeps it busy) or for
+  lazy images below the fold (they never load).
 - Go: `defer x.Hijack().Close()` evaluates `Hijack()` immediately; hijack first.
 - The CLI caches only file hashes (`~/.cache/bodega/hashes.json`); what to upload
   is always asked from the server (`/api/v1/media/check`). Caching "uploaded"

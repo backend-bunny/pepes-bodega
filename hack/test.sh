@@ -8,6 +8,6 @@ echo "== go"; go test ./...
 echo "== workers"
 marker='not models'; [[ "${WITH_MODELS:-}" == 1 ]] && marker=''
 (cd workers && uv run pytest -q ${marker:+-m "$marker"})
-echo "== web"; (cd web && npm run --silent check)
+echo "== web"; (cd web && npm run --silent check && node --test tests/justify.test.mjs)
 echo "== oidc e2e (real Dex, no models)"
 LOCAL_STACK_DIR=$(mktemp -d)/stack hack/e2e-oidc.sh

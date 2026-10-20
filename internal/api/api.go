@@ -50,6 +50,7 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/v1/media", s.upload)
 	api.HandleFunc("GET /api/v1/media", s.listMedia)
 	api.HandleFunc("GET /api/v1/media/{id}", s.getMedia)
+	api.HandleFunc("GET /api/v1/media/{id}/similar", s.similar)
 	api.HandleFunc("DELETE /api/v1/media/{id}", s.deleteMedia)
 	api.HandleFunc("GET /api/v1/search", s.search)
 	api.HandleFunc("GET /api/v1/blobs/{sha}/raw", s.blobRaw)
@@ -188,6 +189,20 @@ func (s *Server) getMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, d)
+}
+
+func (s *Server) similar(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	if !ok {
+		badRequest(w, "invalid id")
+		return
+	}
+	items, err := s.Q.Similar(r.Context(), user(r).ID, id, intParam(r, "limit", 12, 60))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": nonNil(items)})
 }
 
 func (s *Server) deleteMedia(w http.ResponseWriter, r *http.Request) {
