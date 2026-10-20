@@ -15,6 +15,9 @@
 	let sentinel: HTMLDivElement;
 
 	const searching = $derived((page.url.searchParams.get('q') ?? '').trim() !== '');
+	// Search results come sorted: direct (text) matches first, then related (CLIP-only).
+	const direct = $derived(items.filter((i) => i.match === 'direct'));
+	const related = $derived(items.filter((i) => i.match === 'related'));
 
 	async function run() {
 		const q = (page.url.searchParams.get('q') ?? '').trim();
@@ -99,7 +102,9 @@
 
 	<p class="muted meta">
 		{#if searching}
-			{items.length} results{#if !semantic} · semantic search unavailable, text matches only{/if}
+			{direct.length} {direct.length === 1 ? 'match' : 'matches'} · {semantic
+				? `${related.length} vaguely related`
+				: 'semantic search unavailable, text matches only'}
 		{:else if stats}
 			{stats.media} items · {stats.by_status.ready ?? 0} ready · {(stats.by_status.pending ?? 0) +
 				(stats.by_status.processing ?? 0)} in the kitchen · {stats.near_duplicates} near-duplicates
@@ -108,11 +113,30 @@
 
 	{#if error}<p class="error">{error}</p>{/if}
 
-	<div class="grid">
-		{#each items as item (item.id)}
-			<MediaCard {item} />
-		{/each}
-	</div>
+	{#if searching}
+		<div class="grid">
+			{#each direct as item (item.id)}
+				<MediaCard {item} />
+			{/each}
+		</div>
+		{#if related.length}
+			<div class="divider" role="separator">
+				<span>{direct.length ? 'Vaguely related' : 'No direct matches. Vaguely related'}</span>
+				<small class="muted">similar look or meaning, but no tag or text match</small>
+			</div>
+			<div class="grid">
+				{#each related as item (item.id)}
+					<MediaCard {item} />
+				{/each}
+			</div>
+		{/if}
+	{:else}
+		<div class="grid">
+			{#each items as item (item.id)}
+				<MediaCard {item} />
+			{/each}
+		</div>
+	{/if}
 
 	{#if !loading && done && items.length === 0}
 		<p class="muted empty">
@@ -140,6 +164,18 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
 		gap: 0.6rem;
+	}
+	.divider {
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
+		margin: 1.5rem 0 0.75rem;
+		padding-top: 0.75rem;
+		border-top: 1px dashed #4a3f37;
+	}
+	.divider span {
+		font-weight: 600;
+		color: var(--accent-2);
 	}
 	.error {
 		color: var(--danger);

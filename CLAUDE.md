@@ -32,6 +32,10 @@ web upload ─┴─> bodega-api (Go) ───────┼─> Postgres + pg
   `word_similarity` over `blobs.search_text` (OCR + transcript + tags) and the
   filename. Video hits return the best-matching keyframe timestamp. If the
   embedder is down, search degrades to text-only (`semantic: false`).
+  Each hit is `match: "direct"` (the text side matched: tag, OCR, transcript or
+  filename, fuzzily) or `"related"` (CLIP only). Direct always sorts first
+  (`ORDER BY direct DESC, score DESC`, before LIMIT); the GUI splits the two
+  groups with a "Vaguely related" separator.
 - **Jobs**: API publishes `bodega.jobs.process` with msg-id dedup. Postgres
   `blobs.status` is the source of truth; the API's reconciler re-publishes
   `pending` blobs only when the consumer is idle. Workers send in-progress
@@ -200,6 +204,8 @@ Talos cluster, CloudNativePG (`cnpg.enabled=true` renders a `Cluster` with the
 - Headless `chromium --dump-dom` never dumps a page with an open EventSource
   (both `--virtual-time-budget` and `--timeout`). UI checks use playwright-core
   driving devbox's Chromium (`web/tests/ui-smoke.mjs`, run by `hack/e2e.sh`).
+- Svelte trims whitespace at the start of `{#if}` blocks: `{a}{#if b} · {c}{/if}`
+  renders "a· c". Build such text with one expression instead.
 - Go: `defer x.Hijack().Close()` evaluates `Hijack()` immediately; hijack first.
 - The CLI's upload cache is per server URL (`state-<hash>.json`); a shared cache
   made fresh servers (new cluster, new netbird URL) silently receive nothing.

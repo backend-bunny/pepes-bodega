@@ -50,7 +50,7 @@ try {
 
 	// Other pages render their main content.
 	const checks = [
-		['/?q=bother', 'p.meta', /\d+ results/],
+		['/?q=bother', 'p.meta', /1 match · \d+ vaguely related/],
 		['/settings', 'h2', /Device tokens/],
 		['/upload', 'label.drop', /Drop memes here/],
 	];
@@ -59,9 +59,21 @@ try {
 		try {
 			await page.locator(selector).filter({ hasText: text }).waitFor({ timeout: 10000 });
 		} catch {
-			fail(`${path}: no ${selector} matching ${text}`);
+			const seen = await page.locator(selector).allTextContents().catch(() => []);
+			fail(`${path}: no ${selector} matching ${text} (found: ${JSON.stringify(seen)})`);
 		}
 	}
+	// Search: the text hit sits in the first grid, above the 'Vaguely related' separator.
+	await page.goto(`${server}/?q=bother`);
+	try {
+		await page.locator('.divider').waitFor({ timeout: 10000 });
+		const firstGrid = page.locator('main .grid').first();
+		if ((await firstGrid.locator('a.card[title="200% bother.gif"]').count()) !== 1)
+			fail('direct match not in the first grid');
+	} catch {
+		fail('search page has no direct/related separator');
+	}
+
 	const firstId = await (await page.request.get(`${server}/api/v1/media`)).json().then((b) => b.items[0].id);
 	await page.goto(`${server}/m/${firstId}`);
 	await page.locator('aside h2').waitFor({ timeout: 10000 }).catch(() => fail('detail page did not render'));

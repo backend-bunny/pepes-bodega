@@ -80,6 +80,20 @@ r=$(top "cartoon characters riding an escalator"); [[ $r == "escelator land.mp4"
 
 audio_id=$(api /api/v1/media | jq '.items[] | select(.original_filename == "audio-clip.webm") | .id')
 api "/api/v1/media/$audio_id" | jq -e '(.transcript // "") | length > 0' >/dev/null || fail "no Whisper transcript for audio-clip.webm"
+# Direct (text) matches vs vaguely related (CLIP-only), always in that order.
+search() { api "/api/v1/search?q=$(jq -rn --arg q "$1" '$q|@uri')"; }
+ordered='[.items[].match] as $m | ($m | index("related")) as $i
+  | $i == null or ($m[$i:] | all(. == "related"))'
+for q in "cassandra weather" "bother" "cartoon characters riding an escalator"; do
+  search "$q" | jq -e "$ordered" >/dev/null || fail "'$q': direct matches not all before related"
+done
+[[ $(search "cassandra weather" | jq -r '.items[0] | "\(.original_filename)/\(.match)"') == "5 celsius outside.jpg/direct" ]] \
+  || fail "OCR hit not a direct match: $(search "cassandra weather" | jq -c '[.items[] | [.original_filename,.match]]')"
+[[ $(search "cartoon characters riding an escalator" | jq '[.items[] | select(.match == "direct")] | length') == 0 ]] \
+  || fail "pure semantic query produced direct matches"
+[[ $(search "cartoon characters riding an escalator" | jq -r '.items[0].match') == related ]] \
+  || fail "pure semantic hit not marked related"
+
 
 id=$(api /api/v1/media | jq '.items[0].id')
 api "/api/v1/media/$id" | jq -e '.tags | length > 0' >/dev/null || fail "no tags on media $id"

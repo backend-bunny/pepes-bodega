@@ -24,6 +24,7 @@ export interface MediaItem {
 	status: Status;
 	duplicate_of: string | null;
 	score?: number;
+	match?: 'direct' | 'related';
 	match_ts?: number | null;
 }
 

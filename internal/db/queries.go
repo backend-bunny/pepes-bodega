@@ -203,7 +203,10 @@ type MediaItem struct {
 	Status           string    `json:"status"`
 	DuplicateOf      *string   `json:"duplicate_of"`
 	// Search-only fields.
-	Score   float64  `json:"score,omitempty"`
+	Score float64 `json:"score,omitempty"`
+	// Match is "direct" when the query matched text in the item (tag, OCR,
+	// transcript or filename, fuzzily), "related" when only CLIP similarity found it.
+	Match   string   `json:"match,omitempty"`
 	MatchTS *float32 `json:"match_ts,omitempty"`
 }
 
@@ -243,7 +246,8 @@ const rrfK = 60
 
 // Search runs hybrid search over the user's library: CLIP vector similarity
 // (if embedding is non-nil) fused with full-text + trigram fuzzy matching
-// using Reciprocal Rank Fusion.
+// using Reciprocal Rank Fusion. Items the text side matched are "direct" and
+// always sort before CLIP-only "related" ones.
 func (q *Queries) Search(ctx context.Context, userID int64, text string, embedding []float32, limit int) ([]MediaItem, error) {
 	var vec any
 	if embedding != nil {
@@ -275,18 +279,21 @@ func (q *Queries) Search(ctx context.Context, userID int64, text string, embeddi
 			LIMIT 200
 		),
 		fused AS (
-			SELECT id, sum(1.0 / ($4 + r)) AS score
-			FROM (SELECT * FROM vec UNION ALL SELECT * FROM txt) u
+			SELECT id, sum(1.0 / ($4 + r)) AS score, bool_or(direct) AS direct
+			FROM (SELECT id, r, false AS direct FROM vec
+			      UNION ALL SELECT id, r, true FROM txt) u
 			GROUP BY id
 		)
-		SELECT `+mediaCols+`, f.score,
+		SELECT `+mediaCols+`, f.score, f.direct,
 			(SELECT fr.ts_s FROM frames fr
 			 WHERE $2::vector IS NOT NULL AND fr.blob_sha256 = b.sha256 AND b.kind <> 'image'
 			 ORDER BY fr.embedding <=> $2::vector LIMIT 1)
 		FROM fused f
 		JOIN media m ON m.id = f.id
 		JOIN blobs b ON b.sha256 = m.blob_sha256
-		ORDER BY f.score DESC
+		-- Direct (text) matches always first, so vague CLIP-only hits can never
+		-- push them past the limit; within each group by fused score.
+		ORDER BY f.direct DESC, f.score DESC
 		LIMIT $5`, userID, vec, text, rrfK, limit)
 	if err != nil {
 		return nil, err
@@ -295,12 +302,17 @@ func (q *Queries) Search(ctx context.Context, userID int64, text string, embeddi
 	var out []MediaItem
 	for rows.Next() {
 		var score float64
+		var direct bool
 		var ts *float32
-		it, err := scanMedia(rows, &score, &ts)
+		it, err := scanMedia(rows, &score, &direct, &ts)
 		if err != nil {
 			return nil, err
 		}
 		it.Score, it.MatchTS = score, ts
+		it.Match = "related"
+		if direct {
+			it.Match = "direct"
+		}
 		out = append(out, it)
 	}
 	return out, rows.Err()
