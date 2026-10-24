@@ -6,7 +6,7 @@
     "python@3.12",
     "uv@latest",
     "nodejs@22",
-    "ffmpeg@latest",
+    "ffmpeg@4.4.3",
     "kind@latest",
     "kubectl@latest",
     "kubernetes-helm@latest",
