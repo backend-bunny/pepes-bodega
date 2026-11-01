@@ -19,7 +19,7 @@
     "nats-server@latest",
     "seaweedfs@latest",
     "chromium@latest",
-    "dex-oidc@latest",
+    "dex-oidc@2.45.1",
     "socat@latest"
   ],
   "env": {
