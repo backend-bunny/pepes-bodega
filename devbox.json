@@ -12,7 +12,7 @@
     "kubernetes-helm@latest",
     "tilt@latest",
     "natscli@latest",
-    "jq@latest",
+    "jq@1.8.2",
     "yq-go@latest",
     "ruff@latest",
     "path:./nix/postgres",
