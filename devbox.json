@@ -7,7 +7,7 @@
     "uv@latest",
     "nodejs@22",
     "ffmpeg@latest",
-    "kind@latest",
+    "kind@0.33.0",
     "kubectl@latest",
     "kubernetes-helm@latest",
     "tilt@latest",
