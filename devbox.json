@@ -8,7 +8,7 @@
     "nodejs@22",
     "ffmpeg@latest",
     "kind@latest",
-    "kubectl@latest",
+    "kubectl@1.37.2",
     "kubernetes-helm@latest",
     "tilt@latest",
     "natscli@latest",
