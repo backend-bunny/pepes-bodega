@@ -9,7 +9,7 @@
     "ffmpeg@latest",
     "kind@latest",
     "kubectl@latest",
-    "kubernetes-helm@latest",
+    "kubernetes-helm@3.20.2",
     "tilt@latest",
     "natscli@latest",
     "jq@latest",
